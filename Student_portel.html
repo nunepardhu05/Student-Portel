@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Student Portal with Courses and Attendance Summary</title>
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; }
+        .container {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            grid-template-rows: 60px 1fr;
+            height: 100vh;
+        }
+        .header {
+            grid-column: 1 / 3;
+            background-color: #4078c0;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding-left: 20px;
+            font-size: 1.8em;
+        }
+        .sidebar {
+            background: #f2f2f2;
+            padding: 20px;
+        }
+        .sidebar button {
+            display: block;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+            width: 100%;
+            cursor: pointer;
+            background: none;
+            border: none;
+            color: #4078c0;
+            text-align: left;
+        }
+        .sidebar button:hover {
+            text-decoration: underline;
+        }
+        .content {
+            padding: 20px;
+            overflow-y: auto;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+        }
+        .profile-courses {
+            margin-top: 10px;
+            font-style: italic;
+        }
+        .inline-form { margin: 12px 0; }
+        .inline-form label { margin-right: 10px; }
+        input, select, button { padding: 6px 8px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">Student Portal</div>
+    <div class="sidebar">
+        <button onclick="showTab('profile')">Profile</button>
+        <button onclick="showTab('courses')">Courses</button>
+        <button onclick="showTab('attendance')">Attendance</button>
+        <button onclick="showTab('announcements')">Announcements</button>
+    </div>
+    <div class="content">
+        <div id="profile" class="tab" style="display: block;"></div>
+        <div id="courses" class="tab" style="display: none;"></div>
+        <div id="attendance" class="tab" style="display: none;"></div>
+        <div id="announcements" class="tab" style="display: none;"></div>
+    </div>
+</div>
+
+<script>
+    function showTab(tabName) {
+        const tabs = document.querySelectorAll('.tab');
+        tabs.forEach(tab => tab.style.display = 'none');
+        document.getElementById(tabName).style.display = 'block';
+
+        if (tabName === 'courses') {
+            updateCoursesAttendanceTable();
+        }
+        if (tabName === 'profile') {
+            updateAssignCourseOptions();
+        }
+    }
+
+    // Data stores
+    const addedCourses = new Set(); // global course list (stored lowercase)
+    const studentProfilesByName = new Map(); // key: lowercased name -> {id, email, courses: []}
+    const studentProfilesByID = new Map();   // key: id -> {name, email, courses: []}
+    const usedStudentIDs = new Set();
+    const studentAttendance = new Map();     // key: lowercased name -> [{percent}]
+
+    // Profile tab content (includes "Assign Course to Student")
+    const profileDiv = document.getElementById('profile');
+    profileDiv.innerHTML = `
+        <h2>Student Profile</h2>
+        <form id="profileForm" class="inline-form">
+            <label>Name: <input type="text" id="name" required></label>
+            <label>ID: <input type="text" id="id" required></label>
+            <label>Email: <input type="email" id="email" required></label>
+            <button type="submit">Add Profile</button>
+        </form>
+
+        <h3>Assign Course to Student</h3>
+        <form id="assignCourseForm" class="inline-form">
+            <label>Student ID: <input type="text" id="assignStudentID" required></label>
+            <label>Course:
+                <select id="assignCourseSelect" required></select>
+            </label>
+            <button type="submit">Assign</button>
+        </form>
+
+        <h3>Profiles Entered</h3>
+        <table id="profileTable">
+            <thead>
+                <tr><th>Name</th><th>ID</th><th>Email</th><th>Courses</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    `;
+
+    document.getElementById('profileForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const name = document.getElementById('name').value.trim();
+        const id = document.getElementById('id').value.trim();
+        const email = document.getElementById('email').value.trim();
+
+        if (!name || !id || !email) {
+            alert('Please fill all profile fields.');
+            return;
+        }
+
+        const nameKey = name.toLowerCase();
+
+        if (studentProfilesByName.has(nameKey)) {
+            alert('Profile for this student already exists.');
+            return;
+        }
+
+        if (usedStudentIDs.has(id)) {
+            alert('This student ID already exists! IDs must be unique.');
+            return;
+        }
+
+        studentProfilesByName.set(nameKey, { id, email, courses: [] });
+        studentProfilesByID.set(id, { name, email, courses: [] });
+        usedStudentIDs.add(id);
+        updateProfileTable();
+        this.reset();
+    });
+
+    // Assign course to student (from Profile tab)
+    document.getElementById('assignCourseForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const studentID = document.getElementById('assignStudentID').value.trim();
+        const courseVal = document.getElementById('assignCourseSelect').value;
+
+        if (!studentID) {
+            alert('Please enter student ID.');
+            return;
+        }
+        if (!studentProfilesByID.has(studentID)) {
+            alert('Student ID not found. Please add student profile first.');
+            return;
+        }
+        if (!courseVal) {
+            alert('Please select a course.');
+            return;
+        }
+
+        const course = courseVal.toLowerCase();
+        if (!addedCourses.has(course)) {
+            alert('Selected course does not exist.');
+            return;
+        }
+
+        const { name } = studentProfilesByID.get(studentID);
+        const nameKey = name.toLowerCase();
+
+        const profileByName = studentProfilesByName.get(nameKey);
+        const profileByID = studentProfilesByID.get(studentID);
+
+        if (!profileByName.courses.includes(course)) {
+            profileByName.courses.push(course);
+            profileByID.courses.push(course);
+        } else {
+            alert('Course already assigned to this student.');
+            return;
+        }
+
+        updateProfileTable();
+        this.reset();
+    });
+
+    // Courses tab content
+    const coursesDiv = document.getElementById('courses');
+    coursesDiv.innerHTML = `
+        <h2>Courses List & Average Attendance</h2>
+        <form id="coursesForm" class="inline-form">
+            <label>Course Name: <input type="text" id="courseName" required></label>
+            <button type="submit">Add Course</button>
+        </form>
+        <h3>Courses Entered</h3>
+        <table id="coursesTable">
+            <thead>
+                <tr><th>Course Name</th><th>Average Attendance (%)</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    `;
+
+    document.getElementById('coursesForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const courseNameInput = document.getElementById('courseName');
+        const courseNameRaw = courseNameInput.value.trim();
+        if (!courseNameRaw) {
+            alert('Please enter a course name.');
+            return;
+        }
+        const courseKey = courseNameRaw.toLowerCase();
+        if (addedCourses.has(courseKey)) {
+            alert('Course already added!');
+            courseNameInput.value = '';
+            return;
+        }
+        addedCourses.add(courseKey);
+        updateCoursesAttendanceTable();
+        updateAssignCourseOptions();
+        courseNameInput.value = '';
+    });
+
+    // Attendance tab content (NO course input here)
+    const attendanceDiv = document.getElementById('attendance');
+    attendanceDiv.innerHTML = `
+        <h2>Attendance Records</h2>
+        <form id="attendanceForm" class="inline-form">
+            <label>Student ID: <input type="text" id="attendanceStudentID" required></label>
+            <label>Attendance (%): <input type="number" id="attendancePercent" min="0" max="100" required></label>
+            <button type="submit">Add Attendance</button>
+        </form>
+        <h3>Attendance Entered</h3>
+        <table id="attendanceTable">
+            <thead><tr><th>Student ID</th><th>Student Name</th><th>Attendance %</th></tr></thead>
+            <tbody></tbody>
+        </table>
+    `;
+
+    document.getElementById('attendanceForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const studentID = document.getElementById('attendanceStudentID').value.trim();
+        const percent = document.getElementById('attendancePercent').value;
+
+        if (!studentID) {
+            alert('Please enter student ID.');
+            return;
+        }
+
+        if (!studentProfilesByID.has(studentID)) {
+            alert('Student ID not found. Please add student profile first.');
+            return;
+        }
+
+        if (percent === '' || isNaN(percent) || percent < 0 || percent > 100) {
+            alert('Please enter a valid attendance percentage between 0 and 100.');
+            return;
+        }
+
+        const studentName = studentProfilesByID.get(studentID).name;
+
+        if (!confirm(`Confirm adding attendance for student: ${studentName} (ID: ${studentID})?`)) {
+            return;
+        }
+
+        const studentKey = studentName.toLowerCase();
+
+        // Store attendance WITHOUT course
+        let records = studentAttendance.get(studentKey) || [];
+        records.push({ percent: Number(percent) });
+        studentAttendance.set(studentKey, records);
+
+        // Update Attendance table
+        const tableBody = document.querySelector('#attendanceTable tbody');
+        const newRow = document.createElement('tr');
+        newRow.innerHTML = `<td>${studentID}</td><td>${studentName}</td><td>${percent}</td>`;
+        tableBody.appendChild(newRow);
+
+        this.reset();
+
+        // Update Profile and Courses tabs (averages)
+        updateProfileTable();
+        updateCoursesAttendanceTable();
+    });
+
+    // Announcements tab
+    const announcementsDiv = document.getElementById('announcements');
+    announcementsDiv.innerHTML = `
+        <h2>Announcements</h2>
+        <ul>
+            <li>Midterm exams start next week.</li>
+            <li>Project submission deadline extended to October 15.</li>
+            <li>Guest lecture on AI this Friday at 3 PM.</li>
+        </ul>
+    `;
+
+    // Update profile table: shows courses from the profile itself
+    function updateProfileTable() {
+        const tableBody = document.querySelector('#profileTable tbody');
+        tableBody.innerHTML = '';
+
+        studentProfilesByName.forEach((profile, nameKey) => {
+            const coursesList = profile.courses.length > 0
+                ? profile.courses.map(capitalizeName).join(', ')
+                : 'No courses';
+
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td>${capitalizeName(nameKey)}</td>
+                <td>${profile.id}</td>
+                <td>${profile.email}</td>
+                <td><span class="profile-courses">${coursesList}</span></td>
+            `;
+            tableBody.appendChild(newRow);
+        });
+    }
+
+    // ✅ FIXED: course-wise average = mean of enrolled students' own averages
+    function updateCoursesAttendanceTable() {
+        const tableBody = document.querySelector('#coursesTable tbody');
+        if (!tableBody) return;
+        tableBody.innerHTML = '';
+
+        addedCourses.forEach(courseKey => {
+            // Collect averages for students enrolled in this course
+            const studentAverages = [];
+
+            studentProfilesByName.forEach((profile, nameKey) => {
+                if (Array.isArray(profile.courses) && profile.courses.includes(courseKey)) {
+                    const records = studentAttendance.get(nameKey) || [];
+                    if (records.length > 0) {
+                        const sum = records.reduce((acc, r) => acc + Number(r.percent || 0), 0);
+                        const avg = sum / records.length; // student's own average
+                        studentAverages.push(avg);
+                    }
+                }
+            });
+
+            let avgText = 'N/A';
+            if (studentAverages.length > 0) {
+                const total = studentAverages.reduce((a, b) => a + b, 0);
+                avgText = (total / studentAverages.length).toFixed(2);
+            }
+
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${capitalizeName(courseKey)}</td><td>${avgText}</td>`;
+            tableBody.appendChild(row);
+        });
+    }
+
+    // Populate course select in "Assign Course" form
+    function updateAssignCourseOptions() {
+        const select = document.getElementById('assignCourseSelect');
+        if (!select) return;
+        select.innerHTML = '';
+
+        if (addedCourses.size === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'No courses added';
+            select.appendChild(opt);
+            return;
+        }
+
+        addedCourses.forEach(course => {
+            const option = document.createElement('option');
+            option.value = course;
+            option.textContent = capitalizeName(course);
+            select.appendChild(option);
+        });
+    }
+
+    function capitalizeName(name) {
+        return name.replace(/\b\w/g, l => l.toUpperCase());
+    }
+</script>
+</body>
+</html>
